@@ -267,9 +267,21 @@ def detect_emb_col(df):
 
 def parse_vec(s):
     try:
-        return np.array([float(x) for x in str(s).strip().strip('[]').split(',')], dtype=np.float32)
+        arr = np.array([float(x) for x in str(s).strip().strip('[]').split(',')], dtype=np.float32)
+        return arr if arr.ndim == 1 and len(arr) > 0 else None
     except:
         return None
+
+def filter_uniform_vecs(df, vec_col='_vec'):
+    """Drop rows whose vector length differs from the most common length."""
+    lengths = df[vec_col].apply(lambda v: len(v) if v is not None else 0)
+    if lengths.nunique() <= 1:
+        return df
+    modal_len = lengths.mode()[0]
+    bad = (lengths != modal_len).sum()
+    if bad > 0:
+        st.warning(f"Dropped {bad} rows with inconsistent vector dimensions (expected {modal_len})")
+    return df[lengths == modal_len].reset_index(drop=True)
 
 def section(title):
     st.markdown(f'<div class="section-bar">{title}</div>', unsafe_allow_html=True)
@@ -415,6 +427,7 @@ if run_btn:
         emb_df['_vec'] = emb_df[emb_col].apply(parse_vec)
         bad = emb_df['_vec'].isna().sum()
         emb_df = emb_df[emb_df['_vec'].notna()].reset_index(drop=True)
+        emb_df = filter_uniform_vecs(emb_df)
         emb_df['_intent'] = emb_df['Address'].apply(classify_intent)
         if bad > 0:
             st.warning(f"Dropped {bad} rows with unparseable embeddings")
