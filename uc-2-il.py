@@ -343,37 +343,85 @@ st.markdown("---")
 # ── FILE UPLOADS ────────────────────────────────────────────────────
 section("01 — Upload Files")
 
-col1, col2 = st.columns(2)
-with col1:
-    st.markdown("**Embeddings Export** `required`")
-    st.caption("Screaming Frog → Bulk Export → AI Tab → Export")
-    emb_file = st.file_uploader("Drop SF embeddings file", type=["csv", "xlsx", "xls"], key="emb", label_visibility="collapsed")
+upload_mode = st.radio(
+    "Upload mode",
+    ["Single combined sheet", "Separate files"],
+    horizontal=True,
+    help="Single sheet: one file with embeddings + inlinks + sessions columns. Separate files: individual exports per data type."
+)
 
-    st.markdown("**Internal Links Export** `optional`")
-    st.caption("Screaming Frog → Bulk Export → Links → All Internal Links")
-    links_file = st.file_uploader("Drop internal links file", type=["csv", "xlsx", "xls"], key="links", label_visibility="collapsed")
-
-with col2:
-    st.markdown("**GA4 Sessions Export** `optional`")
-    st.caption("Adds traffic demand to opportunity scoring")
-    ga_file = st.file_uploader("Drop GA4 export", type=["csv", "xlsx", "xls"], key="ga", label_visibility="collapsed")
-
+if upload_mode == "Single combined sheet":
+    st.markdown("**Combined Sheet** `required`")
+    st.caption("Must include Address and Embedding columns. Optional columns auto-detected: Inlinks, Sessions, Engaged Sessions, Intent.")
+    combined_file = st.file_uploader("Drop combined file", type=["csv", "xlsx", "xls"], key="combined", label_visibility="collapsed")
     st.markdown("**Ahrefs / Semrush Export** `optional`")
     st.caption("Referring domains — adds authority signal to scoring")
     ahrefs_file = st.file_uploader("Drop Ahrefs/Semrush export", type=["csv", "xlsx", "xls"], key="ahrefs", label_visibility="collapsed")
+    emb_file = links_file = ga_file = None
+else:
+    combined_file = None
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Embeddings Export** `required`")
+        st.caption("Screaming Frog → Bulk Export → AI Tab → Export")
+        emb_file = st.file_uploader("Drop SF embeddings file", type=["csv", "xlsx", "xls"], key="emb", label_visibility="collapsed")
+
+        st.markdown("**Internal Links Export** `optional`")
+        st.caption("Screaming Frog → Bulk Export → Links → All Internal Links")
+        links_file = st.file_uploader("Drop internal links file", type=["csv", "xlsx", "xls"], key="links", label_visibility="collapsed")
+
+    with col2:
+        st.markdown("**GA4 Sessions Export** `optional`")
+        st.caption("Adds traffic demand to opportunity scoring")
+        ga_file = st.file_uploader("Drop GA4 export", type=["csv", "xlsx", "xls"], key="ga", label_visibility="collapsed")
+
+        st.markdown("**Ahrefs / Semrush Export** `optional`")
+        st.caption("Referring domains — adds authority signal to scoring")
+        ahrefs_file = st.file_uploader("Drop Ahrefs/Semrush export", type=["csv", "xlsx", "xls"], key="ahrefs", label_visibility="collapsed")
 
 
-# ── FILE STATUS ──────────────────────────────────────────────────────
-emb_df = load_file(emb_file)
-links_df = load_file(links_file)
-ga_df = load_file(ga_file)
+# ── LOAD FILES ──────────────────────────────────────────────────────
 ahrefs_df = load_file(ahrefs_file)
+
+if upload_mode == "Single combined sheet":
+    combined_df = load_file(combined_file)
+    emb_df = combined_df
+    links_df = None
+    ga_df = None
+
+    # Auto-detect inlinks column from combined sheet
+    _inlinks_col = None
+    _sessions_col = None
+    _engaged_col = None
+    _rate_col = None
+    if combined_df is not None:
+        for c in combined_df.columns:
+            cl = c.lower()
+            if _inlinks_col is None and any(x in cl for x in ['inlinks', 'inlink count', 'unique inlinks']):
+                _inlinks_col = c
+            if _sessions_col is None and 'session' in cl and 'engaged' not in cl:
+                _sessions_col = c
+            if _engaged_col is None and 'engaged session' in cl:
+                _engaged_col = c
+            if _rate_col is None and 'rate' in cl:
+                _rate_col = c
+
+        detected = []
+        if _inlinks_col: detected.append(f"Inlinks: `{_inlinks_col}`")
+        if _sessions_col or _engaged_col: detected.append(f"Traffic: `{_engaged_col or _sessions_col}`")
+        if detected:
+            st.info("Detected columns: " + "  |  ".join(detected))
+else:
+    emb_df = load_file(emb_file)
+    links_df = load_file(links_file)
+    ga_df = load_file(ga_file)
+    _inlinks_col = _sessions_col = _engaged_col = _rate_col = None
 
 status_cols = st.columns(4)
 files_status = [
     ("Embeddings", emb_df, True),
-    ("Internal Links", links_df, False),
-    ("GA4 Data", ga_df, False),
+    ("Internal Links", links_df if upload_mode == "Separate files" else combined_df, False),
+    ("GA4 Data", ga_df if upload_mode == "Separate files" else combined_df, False),
     ("Ahrefs Data", ahrefs_df, False),
 ]
 for i, (label, df, required) in enumerate(files_status):
@@ -459,22 +507,37 @@ if run_btn:
         unit = vecs / norms_
         sim_matrix = unit @ unit.T
 
-    # Internal links
+    # Internal links — build linked_pairs and inlink_counts
     linked_pairs = set()
-    if links_df is not None:
-        src_col = next((c for c in links_df.columns if 'source' in c.lower()), None)
-        dst_col = next((c for c in links_df.columns if 'destination' in c.lower() or 'target' in c.lower()), None)
-        if src_col and dst_col:
-            linked_pairs = set(zip(links_df[src_col].apply(norm_url), links_df[dst_col].apply(norm_url)))
+    inlink_counts = {}
+
+    if upload_mode == "Single combined sheet":
+        # Inlinks come from the inlinks column in the combined sheet
+        if _inlinks_col is not None:
+            for _, row in emb_df.iterrows():
+                u = norm_url(str(row.get('Address', '')))
+                try:
+                    inlink_counts[u] = int(float(row[_inlinks_col])) if pd.notna(row[_inlinks_col]) else 0
+                except (ValueError, TypeError):
+                    inlink_counts[u] = 0
+    else:
+        if links_df is not None:
+            src_col = next((c for c in links_df.columns if 'source' in c.lower()), None)
+            dst_col = next((c for c in links_df.columns if 'destination' in c.lower() or 'target' in c.lower()), None)
+            if src_col and dst_col:
+                linked_pairs = set(zip(links_df[src_col].apply(norm_url), links_df[dst_col].apply(norm_url)))
+                for d in links_df[dst_col].apply(norm_url):
+                    inlink_counts[d] = inlink_counts.get(d, 0) + 1
 
     # Need scores
     need_scores = {}
-    if ga_df is not None or ahrefs_df is not None:
-        inlink_counts = {}
-        if links_df is not None and dst_col:
-            for _, row in links_df.iterrows():
-                d = norm_url(row.get(dst_col, ''))
-                inlink_counts[d] = inlink_counts.get(d, 0) + 1
+    has_scoring_data = (
+        inlink_counts or ahrefs_df is not None or
+        (upload_mode == "Single combined sheet" and (_sessions_col or _engaged_col)) or
+        (upload_mode == "Separate files" and ga_df is not None)
+    )
+
+    if has_scoring_data:
         max_il = max(inlink_counts.values()) if inlink_counts else 1
 
         ref_domains = {}
@@ -488,7 +551,15 @@ if run_btn:
                 max_rd = max(ref_domains.values()) if ref_domains else 1
 
         ga_demand = {}
-        if ga_df is not None:
+        if upload_mode == "Single combined sheet" and (_sessions_col or _engaged_col):
+            traffic_col = _engaged_col or _sessions_col
+            vals = pd.to_numeric(emb_df[traffic_col], errors='coerce')
+            max_val = vals.max() if vals.max() > 0 else 1
+            for _, row in emb_df.iterrows():
+                u = norm_url(str(row.get('Address', '')))
+                v = pd.to_numeric(row.get(traffic_col, 0), errors='coerce')
+                ga_demand[u] = float(v / max_val) if pd.notna(v) else 0
+        elif upload_mode == "Separate files" and ga_df is not None:
             ga_url_c = next((c for c in ga_df.columns if 'page' in c.lower() or 'url' in c.lower() or 'path' in c.lower()), ga_df.columns[0])
             eng_c = next((c for c in ga_df.columns if 'engaged' in c.lower()), None)
             rate_c = next((c for c in ga_df.columns if 'rate' in c.lower()), None)
