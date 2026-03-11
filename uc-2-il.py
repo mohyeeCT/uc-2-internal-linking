@@ -307,9 +307,21 @@ with st.sidebar:
     skip_linked = st.checkbox("Skip already-linked pairs", value=True)
 
     st.markdown("---")
-    st.markdown("**Intent URL Patterns**")
-    st.caption("Format: `/fragment/:label` — comma separated")
-    intent_raw = st.text_area("Patterns", value="/blog/:blog, /product/:product, /service/:service, /solution/:solution, /case-stud/:case_study, /about/:about, /location/:location", height=120)
+    st.markdown("**Intent Classification**")
+    intent_mode = st.radio(
+        "Intent source",
+        ["URL patterns", "Column in embeddings file"],
+        label_visibility="collapsed"
+    )
+
+    if intent_mode == "URL patterns":
+        st.caption("Format: `/fragment/:label` — comma separated")
+        intent_raw = st.text_area("Patterns", value="/blog/:blog, /product/:product, /service/:service, /solution/:solution, /case-stud/:case_study, /about/:about, /location/:location", height=120)
+        intent_col_name = None
+    else:
+        st.caption("Column must exist in your embeddings file. Values should be: blog, product, service, etc.")
+        intent_col_name = st.text_input("Intent column name", value="Intent")
+        intent_raw = None
 
     st.markdown("---")
     st.markdown("**Viability Weights**")
@@ -392,20 +404,27 @@ section("02 — Run Analysis")
 run_btn = st.button("▶  Run Analysis", disabled=(emb_df is None or emb_col is None))
 
 if run_btn:
-    # Parse intent patterns
-    intent_map = {}
-    for chunk in intent_raw.split(','):
-        chunk = chunk.strip()
-        if ':' in chunk:
-            parts = chunk.split(':')
-            intent_map[parts[0].strip()] = parts[1].strip()
+    # Intent classification
+    if intent_mode == "Column in embeddings file":
+        if intent_col_name and intent_col_name in emb_df.columns:
+            emb_df['_intent'] = emb_df[intent_col_name].fillna('other').astype(str).str.strip().str.lower()
+        else:
+            st.warning(f"Column '{intent_col_name}' not found in embeddings file. Falling back to 'other' for all pages. Check the column name in the sidebar.")
+            emb_df['_intent'] = 'other'
+    else:
+        intent_map = {}
+        for chunk in intent_raw.split(','):
+            chunk = chunk.strip()
+            if ':' in chunk:
+                parts = chunk.split(':')
+                intent_map[parts[0].strip()] = parts[1].strip()
 
-    def classify_intent(url):
-        u = (url or '').lower()
-        for pattern, label in intent_map.items():
-            if pattern.lower() in u:
-                return label
-        return 'other'
+        def classify_intent(url):
+            u = (url or '').lower()
+            for pattern, label in intent_map.items():
+                if pattern.lower() in u:
+                    return label
+            return 'other'
 
     viability_rules = {
         ('blog', 'product'): w_blog_product,
@@ -428,7 +447,8 @@ if run_btn:
         bad = emb_df['_vec'].isna().sum()
         emb_df = emb_df[emb_df['_vec'].notna()].reset_index(drop=True)
         emb_df = filter_uniform_vecs(emb_df)
-        emb_df['_intent'] = emb_df['Address'].apply(classify_intent)
+        if intent_mode == "URL patterns":
+            emb_df['_intent'] = emb_df['Address'].apply(classify_intent)
         if bad > 0:
             st.warning(f"Dropped {bad} rows with unparseable embeddings")
 
