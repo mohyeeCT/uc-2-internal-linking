@@ -643,7 +643,7 @@ if 'uc2_results' in st.session_state:
     st.markdown("")
 
     # Intent distribution
-    with st.expander("📊 Intent Breakdown", expanded=False):
+    with st.expander("Intent Breakdown", expanded=False):
         ic = out_df.groupby(['Source Intent', 'Target Intent']).size().reset_index(name='Count')
         ic = ic.sort_values('Count', ascending=False).head(15)
         st.dataframe(ic, use_container_width=True, hide_index=True)
