@@ -6,8 +6,8 @@ import io
 import time
 
 st.set_page_config(
-    page_title="UC2 — Internal Linking",
-    page_icon="🔗",
+    page_title="UC2 - Internal Linking",
+    
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -290,7 +290,7 @@ def section(title):
 # ─── SIDEBAR ────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("### ⚙️ Configuration")
+    st.markdown("### Configuration")
     st.markdown("---")
 
     provider = st.selectbox("Embedding Provider", ["Gemini", "OpenAI"],
@@ -315,7 +315,7 @@ with st.sidebar:
     )
 
     if intent_mode == "URL patterns":
-        st.caption("Format: `/fragment/:label` — comma separated")
+        st.caption("Format: `/fragment/:label` - comma separated")
         intent_raw = st.text_area("Patterns", value="/blog/:blog, /product/:product, /service/:service, /solution/:solution, /case-stud/:case_study, /about/:about, /location/:location", height=120)
         intent_col_name = None
     else:
@@ -336,12 +336,11 @@ with st.sidebar:
 
 # ─── MAIN ───────────────────────────────────────────────────────────
 
-st.markdown("# 🔗 Internal Linking Opportunities")
-st.markdown("Finds semantically relevant link opportunities across your site, scored by topical similarity and business priority.")
+st.markdown("# Internal Linking Opportunities")
 st.markdown("---")
 
 # ── FILE UPLOADS ────────────────────────────────────────────────────
-section("01 — Upload Files")
+section("01 - Upload Files")
 
 upload_mode = st.radio(
     "Upload mode",
@@ -355,7 +354,7 @@ if upload_mode == "Single combined sheet":
     st.caption("Must include Address and Embedding columns. Optional columns auto-detected: Inlinks, Sessions, Engaged Sessions, Intent.")
     combined_file = st.file_uploader("Drop combined file", type=["csv", "xlsx", "xls"], key="combined", label_visibility="collapsed")
     st.markdown("**Ahrefs / Semrush Export** `optional`")
-    st.caption("Referring domains — adds authority signal to scoring")
+    st.caption("Referring domains - adds authority signal to scoring")
     ahrefs_file = st.file_uploader("Drop Ahrefs/Semrush export", type=["csv", "xlsx", "xls"], key="ahrefs", label_visibility="collapsed")
     emb_file = links_file = ga_file = None
 else:
@@ -376,7 +375,7 @@ else:
         ga_file = st.file_uploader("Drop GA4 export", type=["csv", "xlsx", "xls"], key="ga", label_visibility="collapsed")
 
         st.markdown("**Ahrefs / Semrush Export** `optional`")
-        st.caption("Referring domains — adds authority signal to scoring")
+        st.caption("Referring domains - adds authority signal to scoring")
         ahrefs_file = st.file_uploader("Drop Ahrefs/Semrush export", type=["csv", "xlsx", "xls"], key="ahrefs", label_visibility="collapsed")
 
 
@@ -427,11 +426,11 @@ files_status = [
 for i, (label, df, required) in enumerate(files_status):
     with status_cols[i]:
         if df is not None:
-            st.success(f"✓ {label} — {len(df):,} rows")
+            st.success(f"✓ {label} - {len(df):,} rows")
         elif required:
-            st.error(f"✗ {label} — required")
+            st.error(f"✗ {label} - required")
         else:
-            st.info(f"○ {label} — optional")
+            st.info(f"○ {label} - optional")
 
 
 # ── VALIDATE EMBEDDINGS ──────────────────────────────────────────────
@@ -448,7 +447,7 @@ if emb_df is not None:
 
 
 # ── RUN ──────────────────────────────────────────────────────────────
-section("02 — Run Analysis")
+section("02 - Run Analysis")
 run_btn = st.button("▶  Run Analysis", disabled=(emb_df is None or emb_col is None))
 
 if run_btn:
@@ -507,7 +506,7 @@ if run_btn:
         unit = vecs / norms_
         sim_matrix = unit @ unit.T
 
-    # Internal links — build linked_pairs and inlink_counts
+    # Internal links - build linked_pairs and inlink_counts
     linked_pairs = set()
     inlink_counts = {}
 
@@ -633,7 +632,7 @@ if run_btn:
 # ── RESULTS ──────────────────────────────────────────────────────────
 if 'uc2_results' in st.session_state:
     out_df = st.session_state['uc2_results']
-    section("03 — Results")
+    section("03 - Results")
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Link Opportunities", f"{len(out_df):,}")
@@ -662,7 +661,7 @@ if 'uc2_results' in st.session_state:
         }
     )
 
-    section("04 — Export")
+    section("04 - Export")
     csv = out_df.to_csv(index=False).encode()
     st.download_button(
         "⬇  Download internal_link_opportunities.csv",
